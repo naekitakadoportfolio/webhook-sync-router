@@ -1,12 +1,12 @@
 <p align="center"><img src="assets/banner.svg" alt="Webhook Sync Router" width="100%"></p>
 
 <p align="center">
-<img src="https://img.shields.io/badge/stack-Apps_Script_·_Webhooks_·_REST_API-5B3A3A?style=flat-square">
-<img src="https://img.shields.io/badge/data-fictional-FBE3EC?style=flat-square">
-<a href="https://sider.ai/agents/web-creator/share/695ea81100a621619985fdfb"><img src="https://img.shields.io/badge/Portfolio-Nae_Kitakado-F4B4CD?style=flat-square"></a>
+<img src="https://img.shields.io/badge/stack-Apps_Script_·_Webhooks_·_REST_API-14384E?style=flat-square">
+<img src="https://img.shields.io/badge/data-fictional-89CDE7?style=flat-square">
+<a href="https://sider.ai/agents/web-creator/share/695ea81100a621619985fdfb"><img src="https://img.shields.io/badge/Portfolio-Nae_Kitakado-1D4C93?style=flat-square"></a>
 </p>
 
-<p align="center"><a href="https://naekitakadoportfolio.github.io/webhook-sync-router/"><img src="https://img.shields.io/badge/%E2%96%B6%20Try%20the%20live%20demo-5B3A3A?style=for-the-badge" alt="Live demo"></a></p>
+<p align="center"><a href="https://naekitakadoportfolio.github.io/webhook-sync-router/"><img src="https://img.shields.io/badge/%E2%96%B6%20Try%20the%20live%20demo-14384E?style=for-the-badge" alt="Live demo"></a></p>
 
 # Webhook Sync Router
 
