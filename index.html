@@ -1,7 +1,6 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Webhook Sync Router · Nae Kitakado</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<style>
+<title>Webhook Sync Router · Demo</title><meta name="description" content="Idempotent webhook routing with retries, shadow mode and self-tests">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"><style>
 :root{--bg1:#EAF4FA;--bg2:#D7EAF5;--ink:#14384E;--mauve:#4F6E80;--cocoa:#1D4C93;--sky:#89CDE7;--card:rgba(255,255,255,.62);--line:rgba(20,56,78,.14);--blush:rgba(137,205,231,.22);--rose:#89CDE7;--ok-bg:#DDF1E4;--ok:#1E5A36;--warn-bg:#FCEBC8;--warn:#7A4E12;--bad-bg:#F8D7DA;--bad:#8A2C3A}
 [data-theme=dark]{--bg1:#0B1E2A;--bg2:#14384E;--ink:#E6F2F8;--mauve:#9BB8C8;--card:rgba(20,56,78,.55);--line:rgba(137,205,231,.18);--blush:rgba(137,205,231,.12);--cocoa:#89CDE7;--ok-bg:rgba(46,160,90,.2);--ok:#8FE0AE;--warn-bg:rgba(230,160,40,.2);--warn:#F5C97A;--bad-bg:rgba(220,80,90,.2);--bad:#F5A3AC}
 *{box-sizing:border-box}body{margin:0;font-family:Inter,'Segoe UI',system-ui,sans-serif;color:var(--ink);background:linear-gradient(160deg,var(--bg1),var(--bg2));background-attachment:fixed;min-height:100vh}
@@ -26,39 +25,129 @@ table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;p
 pre{background:#0B1E2A;color:#CFE8F4;border-radius:10px;padding:12px;font-size:12px;overflow:auto;max-height:320px}
 footer{text-align:center;font-size:12px;color:var(--mauve);margin-top:28px}a{color:var(--cocoa)}.muted{color:var(--mauve);font-size:13px}
 .hero:after{display:none}
-</style></head><body><div class="wrap"><div class="topbar"><span class="brand">OPERATIONS CONSOLE · DEMO</span><button class="ghost" id="themeBtn" style="margin:0;padding:6px 12px" onclick="(()=>{const h=document.documentElement,n=h.dataset.theme==='dark'?'light':'dark';h.dataset.theme=n;try{localStorage.setItem('demoTheme',n)}catch(e){};themeBtn.textContent=n==='dark'?'☀️ Light':'🌙 Dark'})()">🌙 Dark</button></div>
-<script>try{const s=localStorage.getItem('demoTheme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.dataset.theme=s;addEventListener('DOMContentLoaded',()=>themeBtn.textContent=s==='dark'?'☀️ Light':'🌙 Dark')}catch(e){}</script>
-<div class="hero"><span class="tag">LIVE DEMO · FICTIONAL DATA</span><h1>Webhook Sync Router</h1><p>Simulates a production webhook router that keeps parent tasks and subtasks in sync. Fire events, simulate rate limits, replay duplicates and toggle routes between LIVE and SHADOW to see how it stays safe.</p></div><div class="grid">
-<div class="card"><h2>1 · Fire a webhook event</h2>
-<label>Task</label><select id="task"></select>
-<label>Event</label><select id="ev"><option value="statusSync">taskStatusUpdated → Route A (status sync)</option><option value="allSubtasks">subtasksChanged → Route B (sync all subtasks)</option><option value="fillFields">taskCreated → Route C (fill fields)</option><option value="duplicate">buttonClicked → Route J (duplicate card)</option></select>
-<label>New status</label><select id="st"><option>in progress</option><option>qa review</option><option>approved</option><option>live</option></select>
-<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="fail" style="width:auto"> Simulate API rate limit (HTTP 429)</label>
-<button onclick="fire()">SEND WEBHOOK</button> <button class="ghost" onclick="fire(true)">SEND DUPLICATE EVENT</button> <button class="ghost" onclick="drain()">PROCESS RETRY QUEUE</button></div>
-<div class="card"><h2>2 · Route modes</h2><p class="muted">LIVE writes to the system. SHADOW computes the write and logs it for parity checks, without touching data.</p><table id="modes"></table></div></div>
-<div class="card" style="margin-top:18px"><h2>Metrics</h2><div class="kpi" id="kpi"></div></div>
-<div class="grid"><div class="card"><h2>Tasks & subtasks (system of record)</h2><div id="tasks"></div></div>
-<div class="card"><h2>Ledger</h2><div id="ledger" style="max-height:380px;overflow:auto"></div></div></div>
+</style><style>
+.shell{display:grid;grid-template-columns:220px 1fr;gap:16px;margin-top:4px}@media(max-width:820px){.shell{grid-template-columns:1fr}}
+.side{background:var(--card);backdrop-filter:blur(14px);border:1px solid var(--line);border-radius:16px;padding:14px;height:fit-content;position:sticky;top:12px}
+.side a{display:flex;justify-content:space-between;align-items:center;padding:9px 12px;border-radius:10px;color:var(--ink);text-decoration:none;font-weight:500;margin:2px 0}
+.side a.on{background:var(--cocoa);color:#fff}.side a:hover:not(.on){background:var(--blush)}
+.badge{background:#C0392B;color:#fff;border-radius:99px;font-size:11px;padding:1px 7px}
+.who{border-top:1px solid var(--line);margin-top:12px;padding-top:12px}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}.cal .h{font-size:11px;font-weight:700;color:var(--mauve);text-align:center;letter-spacing:.08em}
+.day{min-height:92px;border:1px solid var(--line);border-radius:10px;padding:6px;background:rgba(255,255,255,.35);cursor:pointer;font-size:12px;overflow:hidden}
+[data-theme=dark] .day{background:rgba(255,255,255,.04)}.day:hover{outline:2px solid var(--sky)}.day.off{opacity:.4}.day.we{background:var(--blush)}.day.today{outline:2px solid var(--cocoa)}.day.sel{background:rgba(29,76,147,.18)}
+.ev{border-radius:5px;padding:1px 5px;margin-top:3px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#fff}
+.Vacation{background:#1D4C93}.Sick{background:#C27C0E}.Personal{background:#2E8B57}.Protected{background:#6B7A86}.Holiday{background:#89CDE7;color:#14384E}.pending{opacity:.6;border:1px dashed #fff}
+.toast{position:fixed;right:18px;bottom:18px;background:var(--cocoa);color:#fff;padding:12px 16px;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.2);opacity:0;transform:translateY(10px);transition:.25s;z-index:9;max-width:340px}.toast.show{opacity:1;transform:none}
+.modal{position:fixed;inset:0;background:rgba(10,30,45,.45);display:none;align-items:center;justify-content:center;z-index:8;padding:16px}.modal.show{display:flex}.modal .card{max-width:480px;width:100%;background:var(--bg1)}
+.row{display:flex;gap:10px}.row>*{flex:1}.legend span{margin-right:10px;font-size:12px}.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:middle}
+.bar{background:var(--blush);border-radius:99px;height:8px;margin-top:4px}.bar div{height:8px;border-radius:99px;background:var(--cocoa)}
+</style><style></style></head><body><div class="wrap">
+<div class="topbar"><span class="brand">SYNC ROUTER · DEMO</span><span><button class="ghost" style="margin:0;padding:6px 12px" onclick="resetAll()">↺ Reset demo data</button> <button class="ghost" id="themeBtn" style="margin:0;padding:6px 12px" onclick="toggleTheme()">🌙 Dark</button></span></div>
+<div class="shell"><nav class="side"><a href="#/overview" data-r="overview">🏠 Overview <span class="badge" data-b="overview"></span></a>
+<a href="#/simulator" data-r="simulator">⚡ Event simulator <span class="badge" data-b="simulator"></span></a>
+<a href="#/routes" data-r="routes">🔀 Routes <span class="badge" data-b="routes"></span></a>
+<a href="#/tasks" data-r="tasks">🗂 Tasks & subtasks <span class="badge" data-b="tasks"></span></a>
+<a href="#/retry" data-r="retry">⏳ Retry & dead letters <span class="badge" data-b="retry"></span></a>
+<a href="#/ledger" data-r="ledger">📒 Ledger <span class="badge" data-b="ledger"></span></a>
+<a href="#/tests" data-r="tests">🧪 Self-tests <span class="badge" data-b="tests"></span></a>
+<a href="#/settings" data-r="settings">⚙️ Settings <span class="badge" data-b="settings"></span></a>
+<a href="#/activity" data-r="activity">🔔 Activity <span class="badge" data-b="activity"></span></a></nav><main id="view"></main></div>
+<div class="modal" id="modal" onclick="if(event.target==this)closeM()"><div class="card" id="mbody"></div></div><div class="toast" id="toast"></div>
+<footer>Portfolio rebuild by <b>Nae Kitakado</b>, AI Automation Consultant · <a href="https://github.com/naekitakadoportfolio/webhook-sync-router">Source</a> · <a href="https://www.linkedin.com/in/nae-k-203194265">LinkedIn</a><br>All data is fictional. Changes are saved in your browser only.</footer></div>
 <script>
-const T={"CID-1001":{name:"Spring promo video",status:"in progress",phase:"Edit",subs:{"Script":"in progress","Voiceover":"in progress","Edit":"in progress"}},"CID-1002":{name:"Product demo cut",status:"qa review",phase:"QA",subs:{"Script":"approved","Edit":"qa review"}},"CID-1003":{name:"Testimonial ad",status:"in progress",phase:"Script",subs:{"Script":"in progress"}}};
-const MODE={statusSync:"LIVE",allSubtasks:"LIVE",fillFields:"SHADOW",duplicate:"LIVE"};const seen=new Set(),retry=[],log=[];let M={recv:0,done:0,dedup:0,retried:0,shadow:0,saved:0},seq=0,lastId=null;
-const $=i=>document.getElementById(i);Object.keys(T).forEach(k=>$("task").add(new Option(k+" · "+T[k].name,k)));
 const PH={"in progress":"Production","qa review":"QA","approved":"Approved","live":"Live"};
-function L(type,msg){log.unshift(`<div style="border-bottom:1px solid var(--line);padding:6px 0"><span class="pill ${type=='ok'?'low':type=='warn'?'medium':'high'}">${type}</span> <span class="muted">${new Date().toLocaleTimeString()}</span> ${msg}</div>`)}
-function apply(e){const t=T[e.task];
- if(e.route=="statusSync"){const w={status:e.status,phase:PH[e.status]};if(MODE.statusSync=="SHADOW"){M.shadow++;L("warn",`[SHADOW] would set ${e.task} subtasks → ${e.status}`);return}
-  t.status=e.status;t.phase=w.phase;for(const s in t.subs)t.subs[s]=e.status;L("ok",`Route A · ${e.task} + ${Object.keys(t.subs).length} subtasks → <b>${e.status}</b>, phase ${w.phase}`)}
- if(e.route=="allSubtasks"){const n=Object.keys(t.subs).length;for(const s in t.subs)t.subs[s]=t.status;L("ok",`Route B · resynced ${n} subtasks of ${e.task} to parent status`)}
- if(e.route=="fillFields"){M.shadow++;L("warn",`[SHADOW] Route C would fill Owner, Team, Due date on ${e.task} (parity: match ✓)`);return}
- if(e.route=="duplicate"){const id="CID-"+(1004+seq++);T[id]=JSON.parse(JSON.stringify(t));T[id].name=t.name+" (iteration)";$("task").add(new Option(id+" · "+T[id].name,id));L("ok",`Route J · duplicated ${e.task} → ${id} with subtasks`)}
- M.done++;M.saved+=2}
-function fire(dup){M.recv++;const e=dup&&lastId?{...lastId}:{id:"evt_"+Math.random().toString(36).slice(2,8),task:$("task").value,route:$("ev").value,status:$("st").value,tries:0};lastId=e;
- if(seen.has(e.id)){M.dedup++;L("warn",`Duplicate event ${e.id} ignored (dedup cache)`);return draw()}
- seen.add(e.id);if($("fail").checked){retry.push(e);L("err",`HTTP 429 on ${e.task} · queued for retry with backoff`);return draw()}apply(e);draw()}
-function drain(){if(!retry.length){L("warn","Retry queue empty");return draw()}while(retry.length){const e=retry.shift();e.tries++;M.retried++;apply(e);L("ok",`Retried ${e.id} after ${2**e.tries}s backoff`)}draw()}
-function draw(){$("kpi").innerHTML=`<div><b>${M.recv}</b>events received</div><div><b>${M.done}</b>writes applied</div><div><b>${M.dedup}</b>duplicates blocked</div><div><b>${retry.length}</b>in retry queue</div><div><b>${M.saved}</b>metered actions avoided</div>`;
- $("modes").innerHTML="<tr><th>Route</th><th>Mode</th><th></th></tr>"+Object.keys(MODE).map(k=>`<tr><td>${k}</td><td><span class="pill ${MODE[k]=='LIVE'?'low':'medium'}">${MODE[k]}</span></td><td><button class="ghost" style="padding:4px 12px;margin:0" onclick="MODE['${k}']=MODE['${k}']=='LIVE'?'SHADOW':'LIVE';draw()">toggle</button></td></tr>`).join("");
- $("tasks").innerHTML=Object.entries(T).map(([k,t])=>`<div style="border-bottom:1px solid var(--line);padding:8px 0"><b>${k}</b> ${t.name} <span class="pill low">${t.status}</span> <span class="muted">phase: ${t.phase}</span><br>${Object.entries(t.subs).map(([s,v])=>`<span class="pill ${v==t.status?'low':'high'}">${s}: ${v}</span>`).join("")}</div>`).join("");$("ledger").innerHTML=log.join("")||"<span class='muted'>No events yet.</span>"}
-draw();
-</script>
-<footer>Built by <b>Nae Kitakado</b>, AI Automation Consultant · <a href="https://github.com/naekitakadoportfolio">GitHub</a> · <a href="https://www.linkedin.com/in/nae-k-203194265">LinkedIn</a> · <a href="https://sider.ai/agents/web-creator/share/695ea81100a621619985fdfb">Portfolio</a><br>All data is fictional. This demo runs entirely in your browser.</footer></div></body></html>
+const ROUTES={statusSync:{id:"A",name:"Status sync",evt:"taskStatusUpdated",desc:"Parent status → all subtasks + creative phase"},allSubtasks:{id:"B",name:"Sync all subtasks",evt:"subtasksChanged",desc:"Re-align every subtask to parent"},fillFields:{id:"C",name:"Fill fields",evt:"taskCreated",desc:"Owner, team, due date defaults"},postText:{id:"G",name:"Post text",evt:"taskMoved",desc:"Fill blank post text from defaults (never overwrite)"},duplicate:{id:"J",name:"Duplicate card",evt:"buttonClicked",desc:"Clone card + subtasks as an iteration"}};
+function SEED(){return{user:"Ops Admin",seq:1004,M:{recv:0,done:0,dedup:0,retried:0,shadow:0,saved:0,parityOk:0,parityBad:0},seen:[],retry:[],dead:[],ledger:[],tests:null,
+ modes:{statusSync:"LIVE",allSubtasks:"LIVE",fillFields:"SHADOW",postText:"LIVE",duplicate:"LIVE"},
+ cfg:{maxRetries:3,backoff:2,dedupTtl:60,alertChannel:"#ops-alerts",rate:0},
+ T:{"CID-1001":{name:"Spring promo video",status:"in progress",phase:"Production",post:"",subs:{"Script":"in progress","Voiceover":"in progress","Edit":"in progress"}},
+    "CID-1002":{name:"Product demo cut",status:"qa review",phase:"QA",post:"Meet the new kit",subs:{"Script":"approved","Edit":"qa review"}},
+    "CID-1003":{name:"Testimonial ad",status:"in progress",phase:"Production",post:"",subs:{"Script":"in progress"}}},log:[]}}
+const P=(c,t)=>`<span class="pill ${c}">${t}</span>`;
+function led(type,route,task,msg){S.ledger.unshift({t:new Date().toLocaleTimeString(),type,route,task,msg});if(S.ledger.length>300)S.ledger.length=300}
+function apply(e){const t=S.T[e.task];if(!t){led("err",e.route,e.task,"Task not found");return false}const r=ROUTES[e.route],mode=S.modes[e.route];
+ if(mode=="SHADOW"){S.M.shadow++;const ok=Math.random()>0.04;ok?S.M.parityOk++:S.M.parityBad++;led("shadow",e.route,e.task,`[SHADOW] would apply ${r.name}${ok?" · parity ✓":" · parity ✗ (diff logged)"}`);return true}
+ if(e.route=="statusSync"){t.status=e.status;t.phase=PH[e.status];for(const s in t.subs)t.subs[s]=e.status;led("ok",e.route,e.task,`Parent + ${Object.keys(t.subs).length} subtasks → ${e.status}`)}
+ if(e.route=="allSubtasks"){for(const s in t.subs)t.subs[s]=t.status;led("ok",e.route,e.task,`Resynced ${Object.keys(t.subs).length} subtasks`)}
+ if(e.route=="fillFields"){t.owner=t.owner||"Default owner";led("ok",e.route,e.task,"Filled owner/team/due")}
+ if(e.route=="postText"){if(t.post){led("ok",e.route,e.task,"Post text already set · NEVER_OVERWRITE, skipped")}else{t.post="Default headline for "+t.name;led("ok",e.route,e.task,"Filled blank post text from defaults")}}
+ if(e.route=="duplicate"){const id="CID-"+(S.seq++);S.T[id]=JSON.parse(JSON.stringify(t));S.T[id].name=t.name+" (iteration)";led("ok",e.route,e.task,`Duplicated → ${id}`)}
+ S.M.done++;S.M.saved+=2;return true}
+function fire(e,dup){S.M.recv++;if(S.seen.includes(e.id)){S.M.dedup++;led("dedup",e.route,e.task,`Duplicate ${e.id} blocked`);return "dedup"}
+ S.seen.push(e.id);if(S.seen.length>500)S.seen.shift();
+ if(Math.random()*100<S.cfg.rate||e.force429){e.tries=0;S.retry.push(e);led("err",e.route,e.task,`HTTP 429 · queued for retry`);return "queued"}
+ apply(e);return "ok"}
+function newEvt(task,route,status,force){return{id:"evt_"+Math.random().toString(36).slice(2,8),task,route,status,force429:force,at:Date.now()}}
+function drain(){let n=0;S.retry=S.retry.filter(e=>{e.tries++;if(e.tries>S.cfg.maxRetries){S.dead.push(e);led("err",e.route,e.task,`Moved to dead letters after ${S.cfg.maxRetries} retries`);L(`🚨 Dead letter on ${e.task} · alert sent to ${S.cfg.alertChannel}`);return false}
+ if(Math.random()<0.75){S.M.retried++;apply(e);n++;led("ok",e.route,e.task,`Retried after ${S.cfg.backoff**e.tries}s backoff`);return false}led("err",e.route,e.task,`Retry ${e.tries} failed again`);return true});return n}
+const V={};
+V.overview=()=>{const M=S.M,pr=M.parityOk+M.parityBad;return`<div class="hero"><span class="tag">WEBHOOK ROUTER</span><h1>Sync Router overview</h1><p>One endpoint, ${Object.keys(ROUTES).length} routes. Events from the project tool are deduplicated, routed, retried and logged.</p></div>
+<div class="card" style="margin-top:16px"><div class="kpi"><div><b>${M.recv}</b>events received</div><div><b>${M.done}</b>writes applied</div><div><b>${M.dedup}</b>duplicates blocked</div><div><b>${S.retry.length}</b>in retry queue</div><div><b>${S.dead.length}</b>dead letters</div><div><b>${M.saved}</b>metered actions avoided</div></div></div>
+<div class="grid"><div class="card"><h2>Routes</h2><table><tr><th>Route</th><th>Event</th><th>Mode</th></tr>${Object.entries(ROUTES).map(([k,r])=>`<tr><td>${r.id} · ${r.name}</td><td class="muted">${r.evt}</td><td>${P(S.modes[k]=="LIVE"?"low":"medium",S.modes[k])}</td></tr>`).join("")}</table></div>
+<div class="card"><h2>Health</h2><p>Shadow parity: <b>${pr?Math.round(M.parityOk/pr*100):100}%</b> over ${pr} checks</p><p>Self-tests: ${S.tests?P(S.tests.fail?"high":"low",`${S.tests.pass}/${S.tests.pass+S.tests.fail} passing`):P("medium","not run")}</p><button onclick="go('simulator')">Open event simulator</button> <button class="ghost" onclick="go('tests')">Run self-tests</button></div></div>`};
+V.simulator=()=>`<div class="grid"><div class="card"><h2>Fire a webhook event</h2>
+<label>Task</label><select id="sTask">${Object.keys(S.T).map(k=>`<option value="${k}">${k} · ${esc(S.T[k].name)}</option>`).join("")}</select>
+<label>Route</label><select id="sRoute">${Object.entries(ROUTES).map(([k,r])=>`<option value="${k}">${r.evt} → Route ${r.id} (${r.name})</option>`).join("")}</select>
+<label>New status (Route A)</label><select id="sSt">${Object.keys(PH).map(s=>`<option>${s}</option>`).join("")}</select>
+<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="s429" style="width:auto"> Force HTTP 429 (rate limit)</label>
+<button onclick="simFire()">SEND WEBHOOK</button> <button class="ghost" onclick="simDup()">REPLAY LAST EVENT</button> <button class="ghost" onclick="simBurst()">BURST × 10</button></div>
+<div class="card"><h2>Last results</h2>${S.ledger.slice(0,10).map(l=>`<div style="padding:5px 0;border-bottom:1px solid var(--line)">${P(l.type=="ok"?"low":l.type=="shadow"||l.type=="dedup"?"medium":"high",l.type)} <span class="muted">${l.t}</span> <b>${l.task}</b> ${esc(l.msg)}</div>`).join("")||"<p class='muted'>No events yet.</p>"}</div></div>`;
+let lastE=null;
+function simFire(){const e=newEvt($("sTask").value,$("sRoute").value,$("sSt").value,$("s429").checked);lastE=e;const r=fire(e);L(`📨 ${e.route} on ${e.task}: ${r}`);toast(r=="ok"?"✅ Event processed":r=="queued"?"⏳ Rate limited · queued":"🛑 Duplicate blocked");route()}
+function simDup(){if(!lastE)return toast("Send an event first");fire(lastE);toast("🛑 Replay blocked by dedup cache");route()}
+function simBurst(){const ks=Object.keys(S.T),rs=Object.keys(ROUTES);for(let i=0;i<10;i++){const e=newEvt(ks[i%ks.length],rs[Math.floor(Math.random()*3)],Object.keys(PH)[Math.floor(Math.random()*4)],Math.random()<.2);fire(e);if(Math.random()<.2)fire(e)}L("⚡ Burst of 10 events simulated");toast("Burst processed");route()}
+V.routes=()=>`<div class="card"><h2>Route configuration</h2><table><tr><th>Route</th><th>Description</th><th>Mode</th><th></th></tr>${Object.entries(ROUTES).map(([k,r])=>`<tr><td><b>${r.id}</b> ${r.name}</td><td class="muted">${r.desc}</td><td>${P(S.modes[k]=="LIVE"?"low":"medium",S.modes[k])}</td><td><button class="ghost" style="margin:0;padding:5px 12px" onclick="toggleMode('${k}')">${S.modes[k]=="LIVE"?"Move to SHADOW":"Promote to LIVE"}</button></td></tr>`).join("")}</table>
+<p class="muted">SHADOW computes each write and logs it for parity checks without touching data. Promote a route only after parity holds.</p></div>
+<div class="card" style="margin-top:16px"><h2>Shadow parity</h2><div class="kpi"><div><b>${S.M.parityOk}</b>matching writes</div><div><b>${S.M.parityBad}</b>diffs</div><div><b>${S.M.shadow}</b>shadow runs</div></div></div>`;
+function toggleMode(k){const to=S.modes[k]=="LIVE"?"SHADOW":"LIVE";if(to=="LIVE"&&S.M.parityBad>0&&!confirm("There are parity diffs. Promote anyway?"))return;S.modes[k]=to;L(`🔀 Route ${ROUTES[k].id} → ${to} by ${S.user}`);toast(`Route ${ROUTES[k].id} is now ${to}`);route()}
+V.tasks=()=>`<div class="card"><h2>Tasks & subtasks</h2><p class="muted">Click a task to drill into its subtasks and history.</p>${Object.entries(S.T).map(([k,t])=>{const ds=Object.values(t.subs).filter(v=>v!=t.status).length;return`<div style="border-bottom:1px solid var(--line);padding:8px 0;cursor:pointer" onclick="taskModal('${k}')"><b>${k}</b> ${esc(t.name)} ${P("low",t.status)} <span class="muted">phase: ${t.phase}</span> ${ds?P("high",ds+" desynced"):P("low","in sync")}</div>`}).join("")}<button class="ghost" onclick="openM(newTaskForm())">+ New task</button></div>`;
+function taskModal(k){const t=S.T[k];openM(`<h2>${k} · ${esc(t.name)}</h2><p>Status ${P("low",t.status)} · phase ${t.phase}</p><p class="muted">Post text: ${esc(t.post)||"(blank)"}</p>
+<table><tr><th>Subtask</th><th>Status</th></tr>${Object.entries(t.subs).map(([s,v])=>`<tr><td>${s}</td><td>${P(v==t.status?"low":"high",v)}</td></tr>`).join("")}</table>
+<h2 style="margin-top:12px">History</h2>${S.ledger.filter(l=>l.task==k).slice(0,6).map(l=>`<div class="muted">${l.t} · ${esc(l.msg)}</div>`).join("")||"<p class='muted'>No events.</p>"}
+<button onclick="closeM();fire(newEvt('${k}','allSubtasks'));route();toast('Resync sent')">Resync subtasks</button> <button class="ghost" onclick="desync('${k}')">Simulate desync</button> <button class="ghost" onclick="closeM()">Close</button>`)}
+function desync(k){const t=S.T[k],s=Object.keys(t.subs)[0];t.subs[s]="in progress"==t.status?"approved":"in progress";L(`⚠️ ${k}/${s} desynced manually`);closeM();route()}
+function newTaskForm(){return`<h2>New task</h2><label>Name</label><input id="nt"><label>Subtasks (comma separated)</label><input id="ns" value="Script, Edit"><button onclick="addTask()">Create</button> <button class="ghost" onclick="closeM()">Cancel</button>`}
+function addTask(){const n=$("nt").value.trim();if(n.length<3)return toast("Name must be at least 3 characters");const id="CID-"+(S.seq++),subs={};$("ns").value.split(",").map(s=>s.trim()).filter(Boolean).forEach(s=>subs[s]="in progress");S.T[id]={name:n,status:"in progress",phase:"Production",post:"",subs};L(`➕ Task ${id} created`);fire(newEvt(id,"fillFields"));closeM();toast("Task created · Route C fired");route()}
+V.retry=()=>`<div class="grid"><div class="card"><h2>Retry queue (${S.retry.length})</h2>${S.retry.map(e=>`<div style="padding:5px 0;border-bottom:1px solid var(--line)"><b>${e.task}</b> · ${e.route} · tries ${e.tries}</div>`).join("")||"<p class='muted'>Queue empty.</p>"}<button onclick="const n=drain();toast(n+' event(s) recovered');route()">PROCESS QUEUE</button></div>
+<div class="card"><h2>Dead letters (${S.dead.length})</h2>${S.dead.map((e,i)=>`<div style="padding:5px 0;border-bottom:1px solid var(--line)"><b>${e.task}</b> · ${e.route} <button class="ghost" style="margin:0 0 0 6px;padding:3px 10px" onclick="replayDead(${i})">Replay</button> <button class="ghost" style="margin:0;padding:3px 10px" onclick="S.dead.splice(${i},1);L('🗑 Dead letter discarded');route()">Discard</button></div>`).join("")||"<p class='muted'>No dead letters.</p>"}</div></div>`;
+V.ledger=()=>{const f=S.lf||{q:"",type:""};const rows=S.ledger.filter(l=>(!f.type||l.type==f.type)&&(!f.q||(l.task+l.msg+l.route).toLowerCase().includes(f.q.toLowerCase())));
+return`<div class="card"><h2>Ledger</h2><div class="row"><input placeholder="Search task, route or message" value="${esc(f.q)}" oninput="S.lf={...(S.lf||{}),q:this.value};clearTimeout(window._lq);window._lq=setTimeout(route,300)"><select onchange="S.lf={...(S.lf||{}),type:this.value};route()"><option value="">All types</option>${["ok","shadow","dedup","err"].map(t=>`<option ${f.type==t?"selected":""}>${t}</option>`).join("")}</select></div>
+<table style="margin-top:10px"><tr><th>Time</th><th>Type</th><th>Route</th><th>Task</th><th>Message</th></tr>${rows.slice(0,100).map(l=>`<tr><td>${l.t}</td><td>${P(l.type=="ok"?"low":l.type=="err"?"high":"medium",l.type)}</td><td>${l.route}</td><td>${l.task}</td><td>${esc(l.msg)}</td></tr>`).join("")}</table>${rows.length?"":"<p class='muted'>No entries match.</p>"}</div>`};
+function runTests(){const snap=JSON.stringify(S);const res=[];const A=(n,f)=>{try{res.push([n,!!f()])}catch(e){res.push([n,false])}};
+ A("Route A sets every subtask to parent status",()=>{const k=Object.keys(S.T)[0];S.modes.statusSync="LIVE";apply({task:k,route:"statusSync",status:"approved"});return Object.values(S.T[k].subs).every(v=>v=="approved")});
+ A("Duplicate event IDs are ignored",()=>{const e=newEvt(Object.keys(S.T)[0],"allSubtasks");fire(e);return fire(e)=="dedup"});
+ A("429 sends the event to the retry queue",()=>{const e=newEvt(Object.keys(S.T)[0],"allSubtasks",null,true);return fire(e)=="queued"});
+ A("SHADOW mode never mutates the task",()=>{const k=Object.keys(S.T)[0];S.modes.statusSync="SHADOW";const b=S.T[k].status;apply({task:k,route:"statusSync",status:"live"});return S.T[k].status==b});
+ A("Post text route never overwrites",()=>{const k="CID-1002";const b=S.T[k].post;S.modes.postText="LIVE";apply({task:k,route:"postText"});return S.T[k].post==b});
+ A("Unknown task is rejected safely",()=>apply({task:"CID-0000",route:"allSubtasks"})===false);
+ A("Duplicate route creates a new card",()=>{const n=Object.keys(S.T).length;S.modes.duplicate="LIVE";apply({task:"CID-1001",route:"duplicate"});return Object.keys(S.T).length==n+1});
+ const keep=JSON.parse(snap);S=keep;S.tests={pass:res.filter(r=>r[1]).length,fail:res.filter(r=>!r[1]).length,res,at:new Date().toLocaleString()};L(`🧪 Self-tests: ${S.tests.pass}/${res.length} passing`);route()}
+V.tests=()=>`<div class="card"><h2>Self-test suite</h2><p class="muted">Each route ships with assertions. Tests run against a snapshot and never change live data.</p><button onclick="runTests()">RUN ALL TESTS</button>
+${S.tests?`<p>Last run ${S.tests.at}: ${P(S.tests.fail?"high":"low",`${S.tests.pass} passed · ${S.tests.fail} failed`)}</p><table>${S.tests.res.map(r=>`<tr><td>${r[1]?"✅":"❌"}</td><td>${r[0]}</td></tr>`).join("")}</table>`:""}</div>`;
+V.settings=()=>`<div class="card"><h2>Settings</h2><div class="row"><div><label>Max retries</label><input type="number" min="1" max="10" id="cR" value="${S.cfg.maxRetries}"></div><div><label>Backoff base (s)</label><input type="number" min="1" max="5" id="cB" value="${S.cfg.backoff}"></div></div>
+<div class="row"><div><label>Simulated 429 rate (%)</label><input type="number" min="0" max="100" id="cX" value="${S.cfg.rate}"></div><div><label>Alert channel</label><input id="cA" value="${esc(S.cfg.alertChannel)}"></div></div>
+<p class="muted">Secrets (API token, webhook secret) live in Script Properties in production, never in code.</p><button onclick="saveCfg()">SAVE SETTINGS</button></div>`;
+function saveCfg(){const r=+$("cR").value,b=+$("cB").value,x=+$("cX").value,a=$("cA").value.trim();if(!(r>=1&&r<=10)||!(b>=1&&b<=5)||!(x>=0&&x<=100))return toast("⛔ Values out of range");if(!a.startsWith("#"))return toast("⛔ Channel must start with #");S.cfg={maxRetries:r,backoff:b,rate:x,alertChannel:a};L(`⚙️ Settings updated by ${S.user}`);toast("Settings saved");route()}
+V.activity=()=>`<div class="card"><h2>Activity</h2>${S.log.map(l=>`<div style="padding:6px 0;border-bottom:1px solid var(--line)"><span class="muted">${l.t}</span> · ${esc(l.m)}</div>`).join("")||"<p class='muted'>No activity yet.</p>"}</div>`;
+function badge(r){return r=="retry"?(S.retry.length+S.dead.length)||"":r=="tests"&&S.tests&&S.tests.fail?S.tests.fail:""}
+
+function replayDead(i){const e=S.dead.splice(i,1)[0];if(e){apply(e);L("♻️ Dead letter replayed on "+e.task);toast("Replayed")}route()}
+
+
+const $=i=>document.getElementById(i);const esc=s=>String(s??"").replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]));
+const KEY="wsrDemo";let S;try{S=JSON.parse(localStorage.getItem(KEY))||SEED()}catch(e){S=SEED()}if(!S.log)S.log=[];
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+function toast(m){const t=$("toast");t.innerHTML=m;t.classList.add("show");clearTimeout(t._);t._=setTimeout(()=>t.classList.remove("show"),3000)}
+function L(m){S.log.unshift({t:new Date().toLocaleString("en-US",{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}),m});if(S.log.length>200)S.log.length=200}
+function openM(h){$("mbody").innerHTML=h;$("modal").classList.add("show")}function closeM(){$("modal").classList.remove("show")}
+function go(r){location.hash="#/"+r}
+function route(){const r=(location.hash.replace("#/","").split("?")[0]||Object.keys(V)[0]);document.querySelectorAll(".side a").forEach(a=>a.classList.toggle("on",a.dataset.r==r));
+ try{$("view").innerHTML=(V[r]||V[Object.keys(V)[0]])()}catch(e){console.error(e);$("view").innerHTML='<div class="card"><h2>Something went wrong</h2><p class="muted">'+esc(e.message)+'</p></div>'}
+ document.querySelectorAll("[data-b]").forEach(b=>{const v=typeof badge=="function"?badge(b.dataset.b):"";b.textContent=v||"";b.style.display=v?"":"none"});
+ if(typeof onRoute=="function")onRoute(r);save()}
+function resetAll(){S=SEED();S.log=S.log||[];save();toast("Demo data reset");route()}
+function toggleTheme(){const h=document.documentElement,n=h.dataset.theme=="dark"?"light":"dark";h.dataset.theme=n;try{localStorage.setItem("demoTheme",n)}catch(e){}$("themeBtn").textContent=n=="dark"?"☀️ Light":"🌙 Dark"}
+try{const t=localStorage.getItem("demoTheme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");document.documentElement.dataset.theme=t;$("themeBtn").textContent=t=="dark"?"☀️ Light":"🌙 Dark"}catch(e){}
+addEventListener("hashchange",route);addEventListener("keydown",e=>{if(e.key=="Escape")closeM()});route();
+
+</script></body></html>

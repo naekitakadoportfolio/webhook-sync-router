@@ -10,31 +10,67 @@
 
 # Webhook Sync Router
 
-Simulates a production webhook router that keeps parent tasks and subtasks in sync. Fire events, simulate rate limits, replay duplicates and toggle routes between LIVE and SHADOW to see how it stays safe.
+A multi-page operations console for an event-driven webhook router that keeps parent tasks and subtasks in sync across a project tool. It shows deduplication, per-route LIVE/SHADOW rollout, retries with backoff, dead letters, a searchable ledger and a built-in self-test suite.
 
-> **Portfolio rebuild.** This is a from-scratch recreation of a production system I designed and run, rebuilt with **fictional data** and no client names, code or branding. The live demo runs entirely in the browser.
+> **Portfolio rebuild.** A from-scratch recreation of a production system I designed and run (Card sync engine). It uses **fictional data**, with no client names, code or branding.
 
-## The problem
-Third-party automation tools billed per task, and status changes on creative production tasks had to fan out to every subtask. Three no-code workflows handled this, consuming tens of thousands of billable tasks a month and occasionally looping or double-firing.
+## ✨ Features
+- **Overview:** KPIs for events, writes, duplicates blocked, retry queue, dead letters and metered actions avoided
+- **Event simulator:** fire any route, force HTTP 429, replay an event to prove idempotency, or send a burst of 10
+- **Routes:** toggle each route LIVE ↔ SHADOW, with a parity warning before promotion
+- **Tasks & subtasks explorer:** drill into any task, see subtask sync state and history, resync or simulate a desync, create tasks (fires the fill-fields route)
+- **Retry & dead letters:** process the queue with exponential backoff; replay or discard dead letters
+- **Ledger:** full event log with search and type filters
+- **Self-tests:** a 7-assertion suite run against a snapshot, so tests never touch live data
+- **Settings:** retries, backoff, simulated rate-limit %, and alert channel, all validated
+- Light/dark theme, responsive layout, state saved in your browser, and one-click **Reset demo data**
 
-## Impact in production
-Replaced the no-code workflows and metered platform automations with one webhook router of 10 routes (9 live, 1 in shadow). Writes became idempotent, failures retry automatically, and every route ships with self-test assertions.
+## 🧭 Try it
+1. Open *Event simulator*, tick **Force HTTP 429** and send → the event lands in *Retry & dead letters*
+2. Click **Replay last event** → blocked by the dedup cache
+3. Go to *Retry & dead letters* → **Process queue**
+4. Open *Self-tests* → **Run all tests**
 
-## What it demonstrates
-| Capability | How |
-|---|---|
-| Event-driven webhook routing | One endpoint, `?route=` dispatch to handler per event type |
-| Idempotency | Event-ID dedup cache blocks double-fires |
-| Resilience | 429 handling, retry queue with exponential backoff |
-| Safe rollout | Per-route LIVE / SHADOW toggle with parity logging |
-| Cost control | Counts metered actions avoided |
-| Observability | Ledger of every event, write and retry |
+Open the **[live demo](https://naekitakadoportfolio.github.io/webhook-sync-router/)**.
 
-## Production architecture
-Webhook (task status updated) → Apps Script `doPost` router → route handler → REST API writes. Config in Script Properties, ledger and retry queue in Sheets, time-driven trigger drains retries, Slack alert on dead letters.
+## 🏗 Production architecture
+| Layer | Production | This demo |
+|---|---|---|
+| Ingress | Apps Script `doPost` with `?route=` dispatch | In-page event simulator |
+| Idempotency | Event-ID cache (CacheService) | `S.seen` list |
+| Retries | Sheets queue + time-driven trigger | `S.retry` + Process button |
+| Writes | Project tool REST API | In-memory task store |
+| Alerts | Chat webhook | Activity log |
+| Tests | Assurance.gs assertion suite | `runTests()` |
 
-## Try it
-Open the **[live demo](https://naekitakadoportfolio.github.io/webhook-sync-router/)** or run `index.html` locally. No install needed.
+## 📁 Project structure
+```
+webhook-sync-router/
+├── index.html        # built app (open this)
+├── src/
+│   ├── app.js        # state, views, business logic
+│   └── app.json      # app config: nav, theme, storage key
+├── assets/banner.svg
+├── README.md
+└── LICENSE
+```
+
+## 🚀 Run locally
+No install needed. Open `index.html`, or:
+```bash
+python3 -m http.server 8000   # http://localhost:8000
+```
+
+## 🧩 Implementation notes
+- `fire()` → dedup check → simulated rate limit → `apply()`
+- `apply()` respects each route's mode; SHADOW records parity without mutating
+- `drain()` retries with `backoff^tries` and moves events to dead letters after `maxRetries`
+- `runTests()` snapshots state, runs assertions, then restores the snapshot
+
+## 🗺 Roadmap
+- Per-route rate limits
+- Export ledger as CSV
+- Signed webhook secret verification demo
 
 ---
 <p align="center"><sub>Built by <b>Nae Kitakado</b>, AI Automation Consultant · <a href="https://www.linkedin.com/in/nae-k-203194265">LinkedIn</a> · <a href="https://sider.ai/agents/web-creator/share/695ea81100a621619985fdfb">Portfolio</a> · open to retainer &amp; part-time consulting</sub></p>

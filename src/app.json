@@ -1,0 +1,3 @@
+{"title":"Webhook Sync Router","brand":"SYNC ROUTER","theme":"glass","storageKey":"wsrDemo","desc":"Idempotent webhook routing with retries, shadow mode and self-tests",
+"nav":[["overview","🏠 Overview"],["simulator","⚡ Event simulator"],["routes","🔀 Routes"],["tasks","🗂 Tasks & subtasks"],["retry","⏳ Retry & dead letters"],["ledger","📒 Ledger"],["tests","🧪 Self-tests"],["settings","⚙️ Settings"],["activity","🔔 Activity"]],
+"appJs":"/home/claude/repos2/webhook-sync-router/src/app.js"}
