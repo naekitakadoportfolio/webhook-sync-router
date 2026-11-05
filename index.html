@@ -1,0 +1,63 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Webhook Sync Router · Nae Kitakado</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--cocoa:#5B3A3A;--ink:#3E2A2F;--mauve:#8A6470;--blush:#FBE3EC;--pink:#F4B4CD;--rose:#F2A7C3;--card:#fff;--bg:#FDF4F7;--line:#F3D3DF}
+*{box-sizing:border-box}body{margin:0;font-family:'DM Sans',Inter,sans-serif;color:var(--ink);background:var(--bg)}
+.wrap{max-width:1080px;margin:0 auto;padding:24px 16px 48px}
+.hero{background:linear-gradient(120deg,var(--blush),var(--pink));border-radius:24px;padding:28px;position:relative;overflow:hidden}
+.hero:after{content:"";position:absolute;right:-60px;top:-60px;width:260px;height:260px;border-radius:50%;background:rgba(255,255,255,.3)}
+.tag{display:inline-block;background:#fff;color:var(--cocoa);font-size:12px;letter-spacing:.14em;font-weight:600;border-radius:99px;padding:4px 12px}
+h1{color:var(--cocoa);font-size:clamp(28px,5vw,44px);margin:10px 0 6px;font-weight:600}
+.hero p{margin:0;max-width:640px;position:relative;z-index:1}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:20px}@media(max-width:760px){.grid{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px}
+h2{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--cocoa);margin:0 0 12px}
+label{font-size:13px;font-weight:600;color:var(--mauve);display:block;margin:10px 0 4px}
+select,textarea,input{width:100%;font:inherit;border:1px solid var(--line);border-radius:12px;padding:10px;background:#fff;color:var(--ink)}
+input[type=range],input[type=checkbox]{accent-color:var(--cocoa)}textarea{min-height:120px;resize:vertical}
+button{background:var(--cocoa);color:#fff;border:0;border-radius:99px;padding:11px 20px;font:inherit;font-weight:600;letter-spacing:.06em;cursor:pointer;margin-top:12px}
+button.ghost{background:#fff;color:var(--cocoa);border:1px solid var(--rose)}
+.pill{display:inline-block;border-radius:99px;padding:3px 10px;font-size:12px;font-weight:600;margin:2px}
+.high{background:#F9D0D6;color:#8A2C3A}.medium{background:#FCE6C8;color:#7A4E12}.low{background:#DDF1E4;color:#1E5A36}
+ul{padding-left:18px;margin:6px 0}li{margin:4px 0}li::marker{color:var(--rose)}
+table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:7px 6px;border-bottom:1px solid var(--line)}th{color:var(--mauve)}
+.kpi{display:flex;gap:10px;flex-wrap:wrap}.kpi div{flex:1;min-width:120px;background:var(--blush);border-radius:14px;padding:12px}.kpi b{display:block;font-size:24px;color:var(--cocoa)}
+pre{background:#2E1F23;color:#FBE3EC;border-radius:12px;padding:12px;font-size:12px;overflow:auto;max-height:320px}
+footer{text-align:center;font-size:13px;color:var(--mauve);margin-top:28px}a{color:var(--cocoa)}
+.muted{color:var(--mauve);font-size:13px}
+</style></head><body><div class="wrap">
+<div class="hero"><span class="tag">LIVE DEMO</span><h1>Webhook Sync Router</h1><p>Simulates a production webhook router that keeps parent tasks and subtasks in sync. Fire events, simulate rate limits, replay duplicates and toggle routes between LIVE and SHADOW to see how it stays safe.</p></div><div class="grid">
+<div class="card"><h2>1 · Fire a webhook event</h2>
+<label>Task</label><select id="task"></select>
+<label>Event</label><select id="ev"><option value="statusSync">taskStatusUpdated → Route A (status sync)</option><option value="allSubtasks">subtasksChanged → Route B (sync all subtasks)</option><option value="fillFields">taskCreated → Route C (fill fields)</option><option value="duplicate">buttonClicked → Route J (duplicate card)</option></select>
+<label>New status</label><select id="st"><option>in progress</option><option>qa review</option><option>approved</option><option>live</option></select>
+<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="fail" style="width:auto"> Simulate API rate limit (HTTP 429)</label>
+<button onclick="fire()">SEND WEBHOOK</button> <button class="ghost" onclick="fire(true)">SEND DUPLICATE EVENT</button> <button class="ghost" onclick="drain()">PROCESS RETRY QUEUE</button></div>
+<div class="card"><h2>2 · Route modes</h2><p class="muted">LIVE writes to the system. SHADOW computes the write and logs it for parity checks, without touching data.</p><table id="modes"></table></div></div>
+<div class="card" style="margin-top:18px"><h2>Metrics</h2><div class="kpi" id="kpi"></div></div>
+<div class="grid"><div class="card"><h2>Tasks & subtasks (system of record)</h2><div id="tasks"></div></div>
+<div class="card"><h2>Ledger</h2><div id="ledger" style="max-height:380px;overflow:auto"></div></div></div>
+<script>
+const T={"CID-1001":{name:"Spring promo video",status:"in progress",phase:"Edit",subs:{"Script":"in progress","Voiceover":"in progress","Edit":"in progress"}},"CID-1002":{name:"Product demo cut",status:"qa review",phase:"QA",subs:{"Script":"approved","Edit":"qa review"}},"CID-1003":{name:"Testimonial ad",status:"in progress",phase:"Script",subs:{"Script":"in progress"}}};
+const MODE={statusSync:"LIVE",allSubtasks:"LIVE",fillFields:"SHADOW",duplicate:"LIVE"};const seen=new Set(),retry=[],log=[];let M={recv:0,done:0,dedup:0,retried:0,shadow:0,saved:0},seq=0,lastId=null;
+const $=i=>document.getElementById(i);Object.keys(T).forEach(k=>$("task").add(new Option(k+" · "+T[k].name,k)));
+const PH={"in progress":"Production","qa review":"QA","approved":"Approved","live":"Live"};
+function L(type,msg){log.unshift(`<div style="border-bottom:1px solid var(--line);padding:6px 0"><span class="pill ${type=='ok'?'low':type=='warn'?'medium':'high'}">${type}</span> <span class="muted">${new Date().toLocaleTimeString()}</span> ${msg}</div>`)}
+function apply(e){const t=T[e.task];
+ if(e.route=="statusSync"){const w={status:e.status,phase:PH[e.status]};if(MODE.statusSync=="SHADOW"){M.shadow++;L("warn",`[SHADOW] would set ${e.task} subtasks → ${e.status}`);return}
+  t.status=e.status;t.phase=w.phase;for(const s in t.subs)t.subs[s]=e.status;L("ok",`Route A · ${e.task} + ${Object.keys(t.subs).length} subtasks → <b>${e.status}</b>, phase ${w.phase}`)}
+ if(e.route=="allSubtasks"){const n=Object.keys(t.subs).length;for(const s in t.subs)t.subs[s]=t.status;L("ok",`Route B · resynced ${n} subtasks of ${e.task} to parent status`)}
+ if(e.route=="fillFields"){M.shadow++;L("warn",`[SHADOW] Route C would fill Owner, Team, Due date on ${e.task} (parity: match ✓)`);return}
+ if(e.route=="duplicate"){const id="CID-"+(1004+seq++);T[id]=JSON.parse(JSON.stringify(t));T[id].name=t.name+" (iteration)";$("task").add(new Option(id+" · "+T[id].name,id));L("ok",`Route J · duplicated ${e.task} → ${id} with subtasks`)}
+ M.done++;M.saved+=2}
+function fire(dup){M.recv++;const e=dup&&lastId?{...lastId}:{id:"evt_"+Math.random().toString(36).slice(2,8),task:$("task").value,route:$("ev").value,status:$("st").value,tries:0};lastId=e;
+ if(seen.has(e.id)){M.dedup++;L("warn",`Duplicate event ${e.id} ignored (dedup cache)`);return draw()}
+ seen.add(e.id);if($("fail").checked){retry.push(e);L("err",`HTTP 429 on ${e.task} · queued for retry with backoff`);return draw()}apply(e);draw()}
+function drain(){if(!retry.length){L("warn","Retry queue empty");return draw()}while(retry.length){const e=retry.shift();e.tries++;M.retried++;apply(e);L("ok",`Retried ${e.id} after ${2**e.tries}s backoff`)}draw()}
+function draw(){$("kpi").innerHTML=`<div><b>${M.recv}</b>events received</div><div><b>${M.done}</b>writes applied</div><div><b>${M.dedup}</b>duplicates blocked</div><div><b>${retry.length}</b>in retry queue</div><div><b>${M.saved}</b>metered actions avoided</div>`;
+ $("modes").innerHTML="<tr><th>Route</th><th>Mode</th><th></th></tr>"+Object.keys(MODE).map(k=>`<tr><td>${k}</td><td><span class="pill ${MODE[k]=='LIVE'?'low':'medium'}">${MODE[k]}</span></td><td><button class="ghost" style="padding:4px 12px;margin:0" onclick="MODE['${k}']=MODE['${k}']=='LIVE'?'SHADOW':'LIVE';draw()">toggle</button></td></tr>`).join("");
+ $("tasks").innerHTML=Object.entries(T).map(([k,t])=>`<div style="border-bottom:1px solid var(--line);padding:8px 0"><b>${k}</b> ${t.name} <span class="pill low">${t.status}</span> <span class="muted">phase: ${t.phase}</span><br>${Object.entries(t.subs).map(([s,v])=>`<span class="pill ${v==t.status?'low':'high'}">${s}: ${v}</span>`).join("")}</div>`).join("");$("ledger").innerHTML=log.join("")||"<span class='muted'>No events yet.</span>"}
+draw();
+</script>
+<footer>Built by <b>Nae Kitakado</b>, AI Automation Consultant · <a href="https://github.com/naekitakadoportfolio">GitHub</a> · <a href="https://www.linkedin.com/in/nae-k-203194265">LinkedIn</a> · <a href="https://sider.ai/agents/web-creator/share/695ea81100a621619985fdfb">Portfolio</a><br>All data is fictional. This demo runs entirely in your browser.</footer></div></body></html>
